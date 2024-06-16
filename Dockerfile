@@ -7,7 +7,7 @@ ARG RUSTC_VERSION="1.77.0"
 ENV RUSTC_VERSION=$RUSTC_VERSION
 ENV DOCKER_IMAGE="paritytech/srtool"
 ENV PROFILE=release
-ENV PACKAGE=polkadot-runtime
+ENV PACKAGE=regionx-rococo-runtime
 ENV BUILDER=builder
 ARG UID=1001
 ARG GID=1001
@@ -33,7 +33,7 @@ RUN apt update && \
     apt upgrade -y && \
     apt install --no-install-recommends -y \
         cmake pkg-config libssl-dev make protobuf-compiler \
-        git clang bsdmainutils ca-certificates curl && \
+        git clang bsdmainutils ca-certificates curl openssh-client && \
     curl -L https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 --output /usr/bin/jq && chmod a+x /usr/bin/jq && \
     rm -rf /var/lib/apt/lists/* /tmp/* && apt clean
 
@@ -48,6 +48,7 @@ COPY RUSTC_VERSION /srtool/
 
 USER $BUILDER
 ENV RUSTUP_HOME="/home/${BUILDER}/rustup"
+ENV SSH_HOME="/home/${BUILDER}/.ssh"
 ENV CARGO_HOME="/home/${BUILDER}/cargo"
 ENV PATH="/srtool:$PATH"
 
@@ -59,6 +60,25 @@ RUN echo $SHELL && \
     rustup component add rust-src --toolchain $RUSTC_VERSION && \
     chmod -R a+w $RUSTUP_HOME $CARGO_HOME && \
     rustup show && rustc -V
+
+# Configure SSH for $BUILDER user
+USER root
+RUN mkdir -p $SSH_HOME && chown -R $BUILDER:$BUILDER $SSH_HOME
+
+# Copy SSH keys and set permissions as root
+COPY id_rsa $SSH_HOME/id_rsa
+COPY id_rsa.pub $SSH_HOME/id_rsa.pub
+COPY known_hosts $SSH_HOME/known_hosts
+
+RUN chmod 600 $SSH_HOME/id_rsa && \
+    chmod 600 $SSH_HOME/id_rsa.pub && \
+    chmod 644 $SSH_HOME/known_hosts && \
+    chown -R $BUILDER:$BUILDER $SSH_HOME
+
+USER $BUILDER
+
+# Set the environment variable to use Git CLI for fetching
+RUN  echo "[net]\ngit-fetch-with-cli = true" >> $CARGO_HOME/config
 
 RUN git config --global --add safe.directory /build && \
     /srtool/version && \
